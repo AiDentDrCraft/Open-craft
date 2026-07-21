@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minecraft PE - Gerçek Voxel Işık</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #87CEEB; font-family: 'Courier New', Courier, monospace; touch-action: none; user-select: none; -webkit-user-select: none; }
+        #game-canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: none; z-index: 5; }
+        #crosshair::before, #crosshair::after { content: ''; position: absolute; background-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 2px black; }
+        #crosshair::before { top: 9px; left: 0; width: 20px; height: 2px; } #crosshair::after { top: 0; left: 9px; width: 2px; height: 20px; }
+
+        #info-panel { position: absolute; top: 10px; left: 10px; z-index: 10; pointer-events: none; text-shadow: 2px 2px 1px #000; color: white; font-weight: bold; }
+        #coords { font-size: 14px; margin-bottom: 4px; }
+        #fps-counter { font-size: 14px; color: #00ff00; }
+
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        #top-right-controls { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; pointer-events: auto; z-index: 10; }
+        #top-right-controls button { padding: 8px 12px; background: rgba(0, 0, 0, 0.6); color: white; border: 2px solid #fff; border-radius: 8px; font-weight: bold; font-size: 12px; text-shadow: 1px 1px 0 #000;}
+
+        #joystick-zone { position: absolute; bottom: 20px; left: 20px; width: 120px; height: 120px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; pointer-events: none; display: none; border: 2px solid rgba(255,255,255,0.5); z-index: 10; }
+        #joystick-knob { position: absolute; top: 50%; left: 50%; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.5); border-radius: 50%; transform: translate(-50%, -50%); }
+
+        .action-btn { position: absolute; background: rgba(255, 255, 255, 0.3); border: 2px solid white; border-radius: 50%; color: white; font-weight: bold; font-size: 14px; display: flex; justify-content: center; align-items: center; pointer-events: auto; z-index: 10; text-shadow: 1px 1px 0 #000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .action-btn:active { background: rgba(255, 255, 255, 0.7); transform: scale(0.95); }
+        
+        #btn-jump { bottom: 120px; right: 20px; width: 60px; height: 60px; }
+        #flight-controls { position: absolute; bottom: 100px; right: 20px; display: none; flex-direction: column; gap: 15px; pointer-events: auto; z-index: 10; }
+        .fly-btn { width: 55px; height: 55px; background: rgba(100, 200, 255, 0.5); border: 2px solid #fff; border-radius: 50%; color: white; font-weight: bold; display: flex; justify-content: center; align-items: center; font-size: 12px; }
+        .fly-btn:active { background: rgba(100, 200, 255, 0.8); }
+
+        #btn-break { bottom: 30px; right: 170px; width: 65px; height: 65px; }
+        #btn-place { bottom: 30px; right: 90px; width: 65px; height: 65px; }
+        #btn-interact { bottom: 120px; right: 100px; width: 60px; height: 60px; display: none; background: rgba(255, 215, 0, 0.6); border-color: gold;}
+
+        #progress-container { position: absolute; top: 55%; left: 50%; transform: translate(-50%, 0); width: 100px; height: 10px; background: rgba(0,0,0,0.5); border: 1px solid white; display: none; z-index: 10; }
+        #progress-bar { width: 0%; height: 100%; background: #4caf50; }
+
+        #hotbar-container { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; pointer-events: auto; z-index: 10; gap: 5px; }
+        #hotbar { display: flex; background: rgba(0, 0, 0, 0.6); border: 2px solid #555; padding: 2px; }
+        .slot { width: 36px; height: 36px; border: 2px solid #333; margin: 1px; display: flex; justify-content: center; align-items: center; background-color: #8b8b8b; position: relative; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.4), inset 2px 2px 0px rgba(255,255,255,0.4);}
+        .slot.active { border-color: #fff; border-width: 3px; z-index: 2; box-shadow: none; }
+        .slot-img { width: 28px; height: 28px; image-rendering: pixelated; pointer-events: none;}
+        .slot-count { position: absolute; bottom: 0; right: 2px; color: white; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+        #btn-inventory-open { width: 36px; height: 36px; background: rgba(0,0,0,0.6); border: 2px solid #fff; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; font-size: 20px; border-radius: 5px; }
+        
+        #touch-left { position: absolute; top: 0; left: 0; width: 50%; height: 100%; pointer-events: auto; }
+        #touch-right { position: absolute; top: 0; left: 50%; width: 50%; height: 100%; pointer-events: auto; }
+
+        /* --- ORTAK ARAYÜZ (MENÜLER) --- */
+        #unified-ui-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); display: none; flex-direction: column; align-items: center; pointer-events: auto; z-index: 100; padding-top: 10px; overflow-y: auto; }
+        .ui-panel { background: #c6c6c6; border: 4px solid #555; border-radius: 5px; padding: 15px; display: none; flex-direction: column; align-items: center; position: relative; width: 90%; max-width: 400px; margin-bottom: 10px; box-sizing: border-box; box-shadow: inset -3px -3px 0px rgba(0,0,0,0.3), inset 3px 3px 0px rgba(255,255,255,0.8);}
+        .ui-panel h3 { margin: 0 0 10px 0; color: #333; text-align: center; }
+        .btn-close { position: absolute; top: 5px; right: 5px; background: #ff4444; color: white; border: 2px solid #880000; width: 30px; height: 30px; font-weight: bold; font-size: 16px; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.3); }
+
+        .inv-section-title { font-size: 12px; margin: 5px 0; color: #333; text-align: center; font-weight: bold; }
+        .inv-grid { display: grid; grid-template-columns: repeat(9, 36px); grid-gap: 2px; justify-content: center; }
+        .inv-slot { width: 36px; height: 36px; background: #8b8b8b; border: 2px solid #333; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.4), inset 2px 2px 0px rgba(255,255,255,0.4); }
+        .inv-slot.selected { border-color: yellow; border-width: 3px; z-index: 2; box-shadow: none;}
+
+        .c-grid-3x3 { display: grid; grid-template-columns: repeat(3, 40px); grid-gap: 2px; }
+        .c-grid-2x2 { display: grid; grid-template-columns: repeat(2, 40px); grid-gap: 2px; }
+        .c-slot { width: 40px; height: 40px; background: #8b8b8b; border: 2px solid #333; display: flex; justify-content: center; align-items: center; position: relative; box-shadow: inset -2px -2px 0px rgba(0,0,0,0.4), inset 2px 2px 0px rgba(255,255,255,0.4); }
+        .c-slot.selected { border-color: yellow; border-width: 3px; z-index: 2; box-shadow: none;}
+
+        .f-layout { display: flex; align-items: center; gap: 20px; }
+        .f-left { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .f-flame-bg { width: 20px; height: 20px; background: #555; position: relative; mask: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C12 2 5 8.5 5 15C5 18.866 8.134 22 12 22C15.866 22 19 18.866 19 15C19 8.5 12 2 12 2Z"/></svg>') center/contain no-repeat; -webkit-mask: url('data:image/svg+xml;utf8,<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C12 2 5 8.5 5 15C5 18.866 8.134 22 12 22C15.866 22 19 18.866 19 15C19 8.5 12 2 12 2Z"/></svg>') center/contain no-repeat; }
+        .f-flame-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: #ff8c00; }
+        .f-arrow-bg { width: 30px; height: 20px; background: #555; position: relative; clip-path: polygon(0 20%, 60% 20%, 60% 0, 100% 50%, 60% 100%, 60% 80%, 0 80%); }
+        .f-arrow-fill { position: absolute; left: 0; width: 0%; height: 100%; background: #fff; }
+
+        #inv-all-items { display: flex; gap: 5px; overflow-x: auto; max-width: 100%; padding-bottom: 5px; margin-bottom: 10px;}
+    </style>
+</head>
+<body>
+    <canvas id="game-canvas"></canvas>
+    
+    <div id="ui-layer">
+        <div id="touch-left"></div> <div id="touch-right"></div>
+        <div id="crosshair"></div> 
+        
+        <div id="info-panel">
+            <div id="fps-counter">FPS: 60</div>
+            <div id="coords">X: 0, Y: 0, Z: 0</div>
+        </div>
+        
+        <div id="top-right-controls">
+            <button id="mode-toggle">Hayatta Kalma</button>
+            <button id="time-toggle">Gündüz</button>
+        </div>
+
+        <div id="joystick-zone"><div id="joystick-knob"></div></div>
+        
+        <div id="btn-jump" class="action-btn">Zıpla</div>
+        <div id="flight-controls">
+            <div id="btn-fly-up" class="fly-btn">Yukarı</div>
+            <div id="btn-fly-down" class="fly-btn">Aşağı</div>
+        </div>
+
+        <div id="btn-break" class="action-btn">Kır</div>
+        <div id="btn-place" class="action-btn">Koy</div>
+        <div id="btn-interact" class="action-btn">Etkileş</div>
+
+        <div id="progress-container"><div id="progress-bar"></div></div>
+
+        <div id="hotbar-container">
+            <div id="hotbar"></div>
+            <div id="btn-inventory-open">...</div>
+        </div>
+    </div>
+
+    <div id="unified-ui-bg">
+        <div class="ui-panel" id="ui-top-inventory">
+            <div class="btn-close" onclick="closeUI()">X</div>
+            <h3>Envanter & Üretim</h3>
+            <div style="display:flex; justify-content:space-around; width: 100%; margin-bottom:10px;">
+                <div style="display:flex; align-items:center;">
+                    <div class="c-grid-2x2" id="inv-crafting-grid"></div>
+                    <div style="font-size: 24px; margin: 0 10px; color:#333;">➔</div>
+                    <div class="c-slot" id="inv-crafting-result"></div>
+                </div>
+            </div>
+            <div class="inv-section-title">Yaratıcı Eşyaları</div>
+            <div id="inv-all-items"></div>
+        </div>
+
+        <div class="ui-panel" id="ui-top-crafting">
+            <div class="btn-close" onclick="closeUI()">X</div>
+            <h3>Çalışma Masası</h3>
+            <div style="display:flex; align-items:center;">
+                <div class="c-grid-3x3" id="table-crafting-grid"></div>
+                <div style="font-size: 30px; margin: 0 15px; color:#333;">➔</div>
+                <div class="c-slot" id="table-crafting-result"></div>
+            </div>
+        </div>
+
+        <div class="ui-panel" id="ui-top-furnace">
+            <div class="btn-close" onclick="closeUI()">X</div>
+            <h3>Fırın</h3>
+            <div class="f-layout">
+                <div class="f-left">
+                    <div class="c-slot" id="f-input"></div>
+                    <div class="f-flame-bg"><div class="f-flame-fill" id="f-flame"></div></div>
+                    <div class="c-slot" id="f-fuel"></div>
+                </div>
+                <div class="f-arrow-bg"><div class="f-arrow-fill" id="f-arrow"></div></div>
+                <div class="c-slot" id="f-output"></div>
+            </div>
+        </div>
+
+        <div class="ui-panel" id="ui-bottom-shared" style="display:flex;">
+            <div class="inv-section-title">Ana Çanta</div>
+            <div id="inv-main-grid" class="inv-grid"></div>
+            <div class="inv-section-title">Hotbar</div>
+            <div id="inv-hotbar-grid" class="inv-grid"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- 1. OYUN SABİTLERİ (64 BLOK YÜKSEKLİK) VE OPTİMİZASYON ---
+        const DÜNYA_BOYUTU = 200; 
+        const DÜNYA_YÜKSEKLİĞİ = 64; 
+        const BLOK_BOYUTU = 1;
+        const RENDER_MESAFESI = 25; 
+        
+        let isCreative = false, isDay = true, activeMenu = null;
+        let lastRenderX = -1000, lastRenderZ = -1000;
+
+        const BLOKLAR = {
+            HAVA: 0,
+            TAHTA: { id: 1, ad: "Tahta", sertlik: 2.0 },
+            YAPRAK: { id: 2, ad: "Yaprak", sertlik: 0.2, saydam: true }, 
+            CAM: { id: 3, ad: "Cam", sertlik: 0.3, saydam: true },
+            KUM: { id: 4, ad: "Kum", sertlik: 0.5, yercekimi: true },
+            TAS: { id: 5, ad: "Taş", sertlik: 1.5 },
+            CIMEN: { id: 6, ad: "Çimen", sertlik: 0.6 },
+            MASA: { id: 7, ad: "Ç. Masası", sertlik: 2.5 },
+            TOPRAK: { id: 8, ad: "Toprak", sertlik: 0.5 },
+            DEMIR: { id: 9, ad: "D. Cevheri", sertlik: 3.0 },
+            KUTUK: { id: 10, ad: "Kütük", sertlik: 2.0 },
+            FIRIN: { id: 11, ad: "Fırın", sertlik: 3.5 },
+            KOMUR_ODUN: { id: 12, ad: "Odun Kömürü", yerlestirilemez: true },
+            KOMUR_CEVHERI: { id: 13, ad: "Kömür Cevheri", sertlik: 3.0 },
+            KOMUR_ITEM: { id: 14, ad: "Kömür", yerlestirilemez: true },
+            CUBUK: { id: 15, ad: "Çubuk", yerlestirilemez: true },
+            KIRIKTAS: { id: 16, ad: "Kırıktaş", sertlik: 2.0 },
+            DEMIR_KULCE: { id: 17, ad: "Demir Külçesi", yerlestirilemez: true },
+            MESALE: { id: 18, ad: "Meşale", sertlik: 0.05, saydam: true, gecilebilir: true }
+        };
+
+        const BLOKLAR_ARRAY = [];
+        for(let key in BLOKLAR) BLOKLAR_ARRAY[BLOKLAR[key].id] = BLOKLAR[key];
+
+        const envanter = Array(36).fill(null).map(() => ({id: 0, count: 0}));
+        const baslangic = [10, 16, 4, 14, 15, 1, 7, 11, 18];
+        for(let i=0; i<9; i++) envanter[i] = {id: baslangic[i], count: 64};
+        let seciliSlot = 0; 
+        let mesaleler = []; // Aktif meşale koordinatları
+
+        function envantereEkle(id, miktar = 1) {
+            for(let i=0; i<36; i++) {
+                if(envanter[i].id === id && envanter[i].count < 64) {
+                    let eklenecek = Math.min(64 - envanter[i].count, miktar);
+                    envanter[i].count += eklenecek; miktar -= eklenecek;
+                    if(miktar === 0) { gorselleriGuncelle(); return; }
+                }
+            }
+            if(miktar > 0) {
+                for(let i=0; i<36; i++) {
+                    if(envanter[i].id === 0) { envanter[i] = {id: id, count: miktar}; gorselleriGuncelle(); return; }
+                }
+            }
+        }
+        function envanterdenCikar(slotIndeks, miktar = 1) {
+            if(envanter[slotIndeks] && envanter[slotIndeks].count >= miktar) {
+                envanter[slotIndeks].count -= miktar;
+                if(envanter[slotIndeks].count === 0) envanter[slotIndeks] = {id: 0, count: 0};
+                gorselleriGuncelle(); return true;
+            } return false;
+        }
+
+        // --- 2. YÜKSEK KALİTE DOKULAR (SİYAH ÇİZGİ ENGELLEYİCİ) ---
+        function textureOlustur(cizimFonk) {
+            const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+            const ctx = canvas.getContext('2d'); cizimFonk(ctx);
+            const tex = new THREE.CanvasTexture(canvas); 
+            tex.magFilter = THREE.NearestFilter; 
+            tex.minFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false; 
+            return tex;
+        }
+
+        const dokular = {};
+        function dokulariHazirla() {
+            const noise = (ctx, r1, r2, y) => { for(let i=0; i<256; i++) { if(Math.random()<y) { ctx.fillStyle=Math.random()>0.5?r1:r2; ctx.fillRect(i%16, Math.floor(i/16), 1, 1); } } };
+
+            dokular.tahta = textureOlustur(ctx => { ctx.fillStyle = "#8f704b"; ctx.fillRect(0,0,16,16); noise(ctx, "#7d5d3b", "#a1825c", 0.4); ctx.fillStyle = "#5c4125"; for(let i=0; i<16; i+=4) ctx.fillRect(0, i, 16, 1); });
+            dokular.yaprak = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#225e22"; for(let i=0; i<70; i++) ctx.fillRect(Math.floor(Math.random()*15), Math.floor(Math.random()*15), 2, 2); ctx.fillStyle = "#2e7a2e"; for(let i=0; i<70; i++) ctx.fillRect(Math.floor(Math.random()*15), Math.floor(Math.random()*15), 2, 2); });
+            dokular.cam = textureOlustur(ctx => { ctx.fillStyle = "rgba(180, 230, 255, 0.2)"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#e0f8ff"; ctx.fillRect(0,0,16,2); ctx.fillRect(0,0,2,16); ctx.fillRect(14,0,2,16); ctx.fillRect(0,14,16,2); ctx.fillRect(3,3,4,2); ctx.fillRect(11,11,2,2); });
+            dokular.kum = textureOlustur(ctx => { ctx.fillStyle = "#dcd2a3"; ctx.fillRect(0,0,16,16); noise(ctx, "#caba8e", "#e8dfb7", 0.5); });
+            dokular.tas = textureOlustur(ctx => { ctx.fillStyle = "#7a7a7a"; ctx.fillRect(0,0,16,16); noise(ctx, "#666666", "#8f8f8f", 0.6); });
+            dokular.kiriktas = textureOlustur(ctx => { ctx.fillStyle = "#5a5a5a"; ctx.fillRect(0,0,16,16); ctx.fillStyle="#474747"; for(let i=0;i<35;i++) ctx.fillRect(Math.random()*14,Math.random()*14,3,3); ctx.fillStyle="#7a7a7a"; for(let i=0;i<45;i++) ctx.fillRect(Math.random()*15,Math.random()*15,2,2); ctx.fillStyle="#2b2b2b"; for(let i=0;i<25;i++) ctx.fillRect(Math.random()*15,Math.random()*15,1,1); });
+            dokular.cimenUst = textureOlustur(ctx => { ctx.fillStyle = "#639938"; ctx.fillRect(0,0,16,16); noise(ctx, "#53822e", "#73ad43", 0.5); });
+            dokular.toprak = textureOlustur(ctx => { ctx.fillStyle = "#6b5138"; ctx.fillRect(0,0,16,16); noise(ctx, "#543d28", "#826549", 0.6); });
+            dokular.cimenYan = textureOlustur(ctx => { ctx.fillStyle = "#6b5138"; ctx.fillRect(0,0,16,16); noise(ctx, "#543d28", "#826549", 0.6); ctx.fillStyle = "#639938"; for(let x=0; x<16; x++) { ctx.fillRect(x, 0, 1, 4 + Math.floor(Math.random()*5)); } ctx.fillStyle = "#467024"; for(let x=0; x<16; x++) { ctx.fillRect(x, 5, 1, 1); } });
+            dokular.masaUst = textureOlustur(ctx => { ctx.fillStyle = "#8a582c"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#4a2c14"; ctx.fillRect(5,0,1,16); ctx.fillRect(10,0,1,16); ctx.fillRect(0,5,16,1); ctx.fillRect(0,10,16,1); });
+            dokular.masaYan = textureOlustur(ctx => { ctx.fillStyle = "#8f704b"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#bbbbbb"; ctx.fillRect(2,2,4,4); ctx.fillStyle = "#634123"; ctx.fillRect(3,6,2,6); ctx.fillRect(0, 14, 16, 2); });
+            dokular.demir = textureOlustur(ctx => { ctx.fillStyle = "#7a7a7a"; ctx.fillRect(0,0,16,16); noise(ctx, "#666", "#8f8f8f", 0.5); ctx.fillStyle = "#e3c2ab"; for(let i=0; i<10; i++) ctx.fillRect(Math.random()*14, Math.random()*14, 2, 2); });
+            dokular.komurCevheri = textureOlustur(ctx => { ctx.fillStyle = "#7a7a7a"; ctx.fillRect(0,0,16,16); noise(ctx, "#666", "#8f8f8f", 0.5); ctx.fillStyle = "#1a1a1a"; for(let i=0; i<14; i++) ctx.fillRect(Math.random()*14, Math.random()*14, 2, 2); });
+            dokular.kutukYan = textureOlustur(ctx => { ctx.fillStyle = "#4d3a25"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#332415"; for(let i=0; i<16; i+=3) ctx.fillRect(i, 0, 1, 16); });
+            dokular.kutukUst = textureOlustur(ctx => { ctx.fillStyle = "#8f704b"; ctx.fillRect(0,0,16,16); ctx.beginPath(); ctx.arc(8,8,6,0,2*Math.PI); ctx.strokeStyle="#6b4e31"; ctx.stroke(); ctx.beginPath(); ctx.arc(8,8,3,0,2*Math.PI); ctx.stroke(); });
+            dokular.firinOn = textureOlustur(ctx => { ctx.fillStyle = "#5a5a5a"; ctx.fillRect(0,0,16,16); noise(ctx, "#474747", "#7a7a7a", 0.5); ctx.fillStyle = "#2b2b2b"; ctx.fillRect(4,4,8,8); ctx.fillStyle = "#141414"; ctx.fillRect(4,8,8,4); ctx.fillStyle = "#3b3b3b"; ctx.fillRect(2,2,12,2); ctx.fillRect(2,12,12,2); });
+            
+            // Eşyalar
+            dokular.komurOdun = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#2b2b2b"; ctx.fillRect(4,4,8,8); ctx.fillRect(5,3,6,10); ctx.fillRect(3,5,10,6); ctx.fillStyle = "#555"; ctx.fillRect(6,6,2,2); ctx.fillRect(9,8,2,2); });
+            dokular.komur = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#141414"; ctx.fillRect(4,4,8,8); ctx.fillRect(5,3,6,10); ctx.fillRect(3,5,10,6); ctx.fillStyle = "#2b2b2b"; ctx.fillRect(6,6,2,2); ctx.fillRect(9,8,2,2); }); 
+            dokular.cubuk = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#6b4e31"; for(let i=0; i<10; i++) ctx.fillRect(12-i, 3+i, 2, 2); ctx.fillStyle = "#8f704b"; for(let i=0; i<10; i++) ctx.fillRect(12-i, 3+i, 1, 1); });
+            dokular.demirKulce = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#dbdbdb"; ctx.fillRect(4,7,8,4); ctx.fillRect(5,6,6,6); ctx.fillStyle = "#ffffff"; ctx.fillRect(5,7,6,1); });
+            
+            // Meşale (Envanter İkonu 2D)
+            dokular.mesaleIcon = textureOlustur(ctx => { ctx.clearRect(0,0,16,16); ctx.fillStyle = "#6b4e31"; ctx.fillRect(7, 6, 2, 8); ctx.fillStyle = "#ffdd00"; ctx.fillRect(7, 3, 2, 3); ctx.fillStyle = "#ff8800"; ctx.fillRect(7, 4, 2, 2); ctx.fillStyle = "#ffffff"; ctx.fillRect(7, 3, 2, 1); ctx.fillStyle = "#ffdd00"; ctx.fillRect(6, 4, 1, 2); ctx.fillRect(9, 4, 1, 2); });
+            
+            // Meşale 3D (Model 0.125 genişliğinde olduğu için texture tam kanvası kaplar)
+            dokular.mesaleYan = textureOlustur(ctx => { 
+                ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, 16, 3); // Beyaz uç
+                ctx.fillStyle = "#ffdd00"; ctx.fillRect(0, 3, 16, 3); // Sarı alev
+                ctx.fillStyle = "#ff8800"; ctx.fillRect(0, 6, 16, 2); // Turuncu kök
+                ctx.fillStyle = "#6b4e31"; ctx.fillRect(0, 8, 16, 8); // Kahverengi ahşap
+                ctx.fillStyle = "#46301a"; ctx.fillRect(8, 8, 8, 8); // Gölge
+            });
+            dokular.mesaleUst = textureOlustur(ctx => { ctx.fillStyle = "#ffdd00"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#ffffff"; ctx.fillRect(4,4,8,8); });
+            dokular.mesaleAlt = textureOlustur(ctx => { ctx.fillStyle = "#6b4e31"; ctx.fillRect(0,0,16,16); });
+
+            dokular.sun = textureOlustur(ctx => { ctx.fillStyle = "#ffffaa"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#ffffff"; ctx.fillRect(2,2,12,12); });
+            dokular.moon = textureOlustur(ctx => { ctx.fillStyle = "#dddddd"; ctx.fillRect(0,0,16,16); ctx.fillStyle = "#aaaaaa"; ctx.fillRect(2,2,4,4); ctx.fillRect(10,8,3,3); ctx.fillRect(4,10,2,2); });
+        }
+
+        function getTextureUrl(id) {
+            let k = "";
+            if(id===1) k='tahta'; else if(id===2) k='yaprak'; else if(id===3) k='cam'; else if(id===4) k='kum'; else if(id===5) k='tas'; 
+            else if(id===6) k='cimenYan'; else if(id===7) k='masaYan'; else if(id===8) k='toprak'; else if(id===9) k='demir'; else if(id===10) k='kutukYan';
+            else if(id===11) k='firinOn'; else if(id===12) k='komurOdun'; else if(id===13) k='komurCevheri'; else if(id===14) k='komur'; 
+            else if(id===15) k='cubuk'; else if(id===16) k='kiriktas'; else if(id===17) k='demirKulce'; else if(id===18) k='mesaleIcon';
+            return (k && dokular[k]) ? dokular[k].image.toDataURL() : null;
+        }
+
+        // --- 3. DÜNYA, VOXEL IŞIK MOTORU (MİNECRAFT ORİJİNAL) ---
+        const scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB); scene.fog = new THREE.Fog(0x87CEEB, 20, RENDER_MESAFESI + 5); 
+        const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 100);
+        
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: false });
+        renderer.setPixelRatio(window.devicePixelRatio > 1 ? 1.5 : 1); 
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        let sunMesh, moonMesh;
+        function gokyuzuKur() {
+            const geo = new THREE.PlaneGeometry(50, 50);
+            sunMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: dokular.sun, transparent: true, fog: false })); scene.add(sunMesh);
+            moonMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: dokular.moon, transparent: true, fog: false })); scene.add(moonMesh); moonMesh.visible = false;
+        }
+
+        // Voxel Light Haritası (Her bloğun ışık seviyesini tutar)
+        const torchLightMap = new Uint8Array(DÜNYA_BOYUTU * DÜNYA_YÜKSEKLİĞİ * DÜNYA_BOYUTU);
+        const heightMap = new Uint8Array(DÜNYA_BOYUTU * DÜNYA_BOYUTU);
+
+        const dunya = new Uint8Array(DÜNYA_BOYUTU * DÜNYA_YÜKSEKLİĞİ * DÜNYA_BOYUTU);
+        function indisHesapla(x, y, z) { return x + z * DÜNYA_BOYUTU + y * DÜNYA_BOYUTU * DÜNYA_BOYUTU; }
+        function blokAl(x, y, z) { if(x<0 || x>=DÜNYA_BOYUTU || y<0 || y>=DÜNYA_YÜKSEKLİĞİ || z<0 || z>=DÜNYA_BOYUTU) return 0; return dunya[indisHesapla(x, y, z)]; }
+        function blokKoy(x, y, z, id) { 
+            if(x>=0 && x<DÜNYA_BOYUTU && y>=0 && y<DÜNYA_YÜKSEKLİĞİ && z>=0 && z<DÜNYA_BOYUTU) {
+                dunya[indisHesapla(x, y, z)] = id; 
+                let hIdx = x + z * DÜNYA_BOYUTU;
+                if (id !== 0 && id !== 2 && id !== 3 && id !== 18) {
+                    if (y > heightMap[hIdx]) heightMap[hIdx] = y;
+                } else if (y === heightMap[hIdx]) {
+                    let ny = y - 1;
+                    while (ny >= 0) {
+                        let nid = blokAl(x, ny, z);
+                        if (nid !== 0 && nid !== 2 && nid !== 3 && nid !== 18) break;
+                        ny--;
+                    }
+                    heightMap[hIdx] = ny < 0 ? 0 : ny;
+                }
+            }
+        }
+
+        function isTransparent(id) { return id === 0 || id === 2 || id === 3 || id === 18; }
+
+        // BFS Işık Dağıtma (Duvarlardan asla geçemez)
+        function updateTorchLightMap() {
+            torchLightMap.fill(0);
+            let queue = [];
+            for (let i=0; i<mesaleler.length; i++) {
+                let t = mesaleler[i];
+                torchLightMap[indisHesapla(t.x, t.y, t.z)] = 14; // Maksimum meşale ışığı 14
+                queue.push({x: t.x, y: t.y, z: t.z, lvl: 14});
+            }
+            
+            let head = 0;
+            const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+            
+            while(head < queue.length) {
+                let curr = queue[head++];
+                if(curr.lvl <= 1) continue;
+                
+                for(let i=0; i<6; i++) {
+                    let nx = curr.x + dirs[i][0], ny = curr.y + dirs[i][1], nz = curr.z + dirs[i][2];
+                    if(nx>=0 && nx<DÜNYA_BOYUTU && ny>=0 && ny<DÜNYA_YÜKSEKLİĞİ && nz>=0 && nz<DÜNYA_BOYUTU) {
+                        let idx = indisHesapla(nx, ny, nz);
+                        if(torchLightMap[idx] < curr.lvl - 1) {
+                            let id = dunya[idx];
+                            // Işık sadece havadan, camdan, yapraktan ve meşaleden geçebilir
+                            if(isTransparent(id)) {
+                                torchLightMap[idx] = curr.lvl - 1;
+                                queue.push({x: nx, y: ny, z: nz, lvl: curr.lvl - 1});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function dunyaUret() {
+            let baseHeight = 32; // Zemin artık 32. blokta
+            for(let x=0; x<DÜNYA_BOYUTU; x++) {
+                for(let z=0; z<DÜNYA_BOYUTU; z++) {
+                    let yuks = baseHeight + Math.floor(Math.sin(x/10)*3 + Math.cos(z/8)*3);
+                    heightMap[x + z * DÜNYA_BOYUTU] = yuks; 
+                    for(let y=0; y<=yuks; y++) {
+                        if(y === yuks) { if(Math.random() < 0.1) blokKoy(x, y, z, 4); else blokKoy(x, y, z, 6); } 
+                        else if(y > yuks - 4) blokKoy(x, y, z, 8); // Toprak katmanı daha kalın
+                        else {
+                            let rnd = Math.random();
+                            if(rnd < 0.04) blokKoy(x, y, z, 9); else if(rnd < 0.08) blokKoy(x, y, z, 13); else blokKoy(x, y, z, 5);
+                        }
+                    }
+                    if(Math.random() < 0.01 && x > 2 && x < DÜNYA_BOYUTU-2 && z > 2 && z < DÜNYA_BOYUTU-2) {
+                        if(blokAl(x, yuks, z) === 6) {
+                            let agacBoyu = 4 + Math.floor(Math.random()*2);
+                            heightMap[x + z * DÜNYA_BOYUTU] = yuks + agacBoyu;
+                            for(let i=1; i<=agacBoyu; i++) blokKoy(x, yuks+i, z, 10);
+                            for(let lx = -2; lx <= 2; lx++) {
+                                for(let lz = -2; lz <= 2; lz++) {
+                                    for(let ly = agacBoyu-1; ly <= agacBoyu+1; ly++) {
+                                        if(lx===0 && lz===0 && ly<=agacBoyu) continue;
+                                        if(Math.abs(lx)+Math.abs(lz) === 4 && Math.random()<0.5) continue;
+                                        if(blokAl(x+lx, yuks+ly, z+lz) === 0) blokKoy(x+lx, yuks+ly, z+lz, 2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            updateTorchLightMap();
+        }
+
+        const meshes = {}; const MAX_INSTANCE = 35000; const dummyObj = new THREE.Object3D(); const dummyColor = new THREE.Color();
+        
+        // Voxel Light Rengini alabilmek için MeshBasicMaterial kullanacağız
+        function matOlustur(doku, saydam = false, alphaT = 0) { 
+            return new THREE.MeshBasicMaterial({ map: doku, transparent: saydam, alphaTest: alphaT }); 
+        }
+
+        function meshSisteminiKur() {
+            dokulariHazirla(); gokyuzuKur();
+            const geometry = new THREE.BoxGeometry(BLOK_BOYUTU, BLOK_BOYUTU, BLOK_BOYUTU);
+            const mCimen = [matOlustur(dokular.cimenYan), matOlustur(dokular.cimenYan), matOlustur(dokular.cimenUst), matOlustur(dokular.toprak), matOlustur(dokular.cimenYan), matOlustur(dokular.cimenYan)];
+            const mMasa = [matOlustur(dokular.masaYan), matOlustur(dokular.masaYan), matOlustur(dokular.masaUst), matOlustur(dokular.tahta), matOlustur(dokular.masaYan), matOlustur(dokular.masaYan)];
+            const mKutuk = [matOlustur(dokular.kutukYan), matOlustur(dokular.kutukYan), matOlustur(dokular.kutukUst), matOlustur(dokular.kutukUst), matOlustur(dokular.kutukYan), matOlustur(dokular.kutukYan)];
+            const mFirin = [matOlustur(dokular.kiriktas), matOlustur(dokular.kiriktas), matOlustur(dokular.kiriktas), matOlustur(dokular.kiriktas), matOlustur(dokular.firinOn), matOlustur(dokular.kiriktas)];
+            
+            const mMesale = [
+                matOlustur(dokular.mesaleYan, true, 0.5), matOlustur(dokular.mesaleYan, true, 0.5),
+                matOlustur(dokular.mesaleUst, true, 0.5), matOlustur(dokular.mesaleAlt, true, 0.5),
+                matOlustur(dokular.mesaleYan, true, 0.5), matOlustur(dokular.mesaleYan, true, 0.5)
+            ];
+
+            const t = {
+                1: matOlustur(dokular.tahta), 2: matOlustur(dokular.yaprak, true, 0.5), 3: matOlustur(dokular.cam, true),
+                4: matOlustur(dokular.kum), 5: matOlustur(dokular.tas), 6: mCimen, 7: mMasa, 8: matOlustur(dokular.toprak), 
+                9: matOlustur(dokular.demir), 10: mKutuk, 11: mFirin, 13: matOlustur(dokular.komurCevheri), 16: matOlustur(dokular.kiriktas),
+                18: mMesale 
+            };
+            
+            for(let id in t) { 
+                let mesh = new THREE.InstancedMesh(geometry, t[id], MAX_INSTANCE); 
+                mesh.count = 0; 
+                const colorArray = new Float32Array(MAX_INSTANCE * 3);
+                mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+                mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+                scene.add(mesh); meshes[id] = mesh; 
+            }
+        }
+
+        function meshlariGuncelle() {
+            for(let key in meshes) meshes[key].count = 0;
+            let px = Math.floor(oyuncu.x), pz = Math.floor(oyuncu.z);
+
+            for(let x = Math.max(0, px - RENDER_MESAFESI); x < Math.min(DÜNYA_BOYUTU, px + RENDER_MESAFESI); x++) {
+                for(let y=0; y<DÜNYA_YÜKSEKLİĞİ; y++) {
+                    for(let z = Math.max(0, pz - RENDER_MESAFESI); z < Math.min(DÜNYA_BOYUTU, pz + RENDER_MESAFESI); z++) {
+                        let id = blokAl(x,y,z); if(id === 0) continue;
+                        let ciz = false;
+                        const kom = [blokAl(x+1,y,z), blokAl(x-1,y,z), blokAl(x,y+1,z), blokAl(x,y-1,z), blokAl(x,y,z+1), blokAl(x,y,z-1)];
+                        for(let k of kom) { if(isTransparent(k)) { ciz = true; break; } }
+                        
+                        if(ciz && meshes[id]) {
+                            let m = meshes[id];
+                            if(m.count < MAX_INSTANCE) {
+                                dummyObj.position.set(x, y, z); dummyObj.scale.set(1, 1, 1);
+                                if(id === 18) { dummyObj.position.set(x, y - 0.25, z); dummyObj.scale.set(0.125, 0.5, 0.125); } 
+                                dummyObj.updateMatrix(); m.setMatrixAt(m.count, dummyObj.matrix); 
+                                
+                                // GÖRÜŞ ODAKLI VOXEL IŞIKLANDIRMASI (IŞIK SIZMASI FIX)
+                                let tLvl = 0;
+                                let idx = indisHesapla(x,y,z);
+                                
+                                if (id === 18) tLvl = 15; 
+                                else if (isTransparent(id)) tLvl = torchLightMap[idx];
+                                else {
+                                    // Sadece oyuncunun görebildiği yüzeylere komşu olan HAVA bloklarının ışığını al
+                                    let maxL = 0;
+                                    let dx = x - px, dy = y - (oyuncu.y+1.8), dz = z - pz;
+                                    if (dx <= 0 && x < DÜNYA_BOYUTU-1 && isTransparent(blokAl(x+1,y,z))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x+1,y,z)]);
+                                    if (dx >= 0 && x > 0 && isTransparent(blokAl(x-1,y,z))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x-1,y,z)]);
+                                    if (dy <= 0 && y < DÜNYA_YÜKSEKLİĞİ-1 && isTransparent(blokAl(x,y+1,z))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x,y+1,z)]);
+                                    if (dy >= 0 && y > 0 && isTransparent(blokAl(x,y-1,z))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x,y-1,z)]);
+                                    if (dz <= 0 && z < DÜNYA_BOYUTU-1 && isTransparent(blokAl(x,y,z+1))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x,y,z+1)]);
+                                    if (dz >= 0 && z > 0 && isTransparent(blokAl(x,y,z-1))) maxL = Math.max(maxL, torchLightMap[indisHesapla(x,y,z-1)]);
+                                    tLvl = maxL;
+                                }
+                                
+                                // Güneş Işığı Hesaplaması (Ağaçların siyah görünme hatası çözüldü)
+                                let hIdx = x + z * DÜNYA_BOYUTU;
+                                let isExposed = y >= heightMap[hIdx];
+                                if (!isExposed) {
+                                    if (x>0 && y >= heightMap[hIdx-1]) isExposed = true;
+                                    else if (x<DÜNYA_BOYUTU-1 && y >= heightMap[hIdx+1]) isExposed = true;
+                                    else if (z>0 && y >= heightMap[hIdx-DÜNYA_BOYUTU]) isExposed = true;
+                                    else if (z<DÜNYA_BOYUTU-1 && y >= heightMap[hIdx+DÜNYA_BOYUTU]) isExposed = true;
+                                }
+                                let sLvl = isDay ? (isExposed ? 15 : 2) : 2; 
+
+                                let maxLvl = Math.max(sLvl, tLvl);
+                                let brightness = Math.max(0.08, maxLvl / 15.0); 
+                                
+                                let r = brightness, g = brightness, b = brightness;
+                                if (tLvl >= sLvl && tLvl > 2) {
+                                    r = Math.min(1.0, brightness * 1.3); g = Math.min(1.0, brightness * 1.1); b = Math.min(1.0, brightness * 0.9);
+                                } else if (!isDay && sLvl > tLvl) {
+                                    r = brightness * 0.8; g = brightness * 0.9;
+                                }
+
+                                dummyColor.setRGB(r, g, b);
+                                m.setColorAt(m.count, dummyColor);
+
+                                m.count++;
+                            }
+                        }
+                    }
+                }
+            }
+            for(let key in meshes) {
+                meshes[key].instanceMatrix.needsUpdate = true;
+                if(meshes[key].instanceColor) meshes[key].instanceColor.needsUpdate = true;
+            }
+        }
+
+        // --- OPTİMİZE DİNAMİK FİZİKLER ---
+        function yaprakBaglantisiVarMi(startX, startY, startZ) {
+            let visited = new Set(); let queue = [{x: startX, y: startY, z: startZ, dist: 0}]; visited.add(`${startX},${startY},${startZ}`);
+            while(queue.length > 0) {
+                let curr = queue.shift(); if(blokAl(curr.x, curr.y, curr.z) === 10) return true;
+                if(curr.dist < 4) { 
+                    const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+                    for(let d of dirs) {
+                        let nx = curr.x + d[0], ny = curr.y + d[1], nz = curr.z + d[2]; let b = blokAl(nx, ny, nz);
+                        if(b === 2 || b === 10) { let key = `${nx},${ny},${nz}`; if(!visited.has(key)) { visited.add(key); queue.push({x: nx, y: ny, z: nz, dist: curr.dist + 1}); } }
+                    }
+                }
+            } return false;
+        }
+
+        setInterval(() => {
+            let mUp = false; let px = Math.floor(oyuncu.x), pz = Math.floor(oyuncu.z);
+
+            // Kum Düşmesi & Meşale Kırılması
+            for(let y=1; y<DÜNYA_YÜKSEKLİĞİ; y++) {
+                for(let x=Math.max(0, px - 25); x<=Math.min(DÜNYA_BOYUTU-1, px + 25); x++) {
+                    for(let z=Math.max(0, pz - 25); z<=Math.min(DÜNYA_BOYUTU-1, pz + 25); z++) {
+                        let id = blokAl(x,y,z);
+                        if(id === 4) { // Kum
+                            let alt = blokAl(x,y-1,z);
+                            if(alt === 0) { blokKoy(x, y-1, z, 4); blokKoy(x, y, z, 0); mUp = true; } 
+                            else if (alt === 18) { blokKoy(x, y, z, 0); envantereEkle(4, 1); mUp = true; } 
+                        } else if (id === 18) { // MESHALE ZEMİN KONTROLÜ
+                            let alt = blokAl(x, y-1, z);
+                            let altData = BLOKLAR_ARRAY[alt];
+                            // Altında Hava veya Meşale varsa destek kesilir. Cam ve Yaprak SAYDAMDIR ama destek sağlar.
+                            if (alt === 0 || alt === 18) {
+                                blokKoy(x, y, z, 0); 
+                                mesaleler = mesaleler.filter(t => t.x!==x || t.y!==y || t.z!==z);
+                                updateTorchLightMap(); envantereEkle(18, 1); mUp = true;
+                            }
+                        }
+                    }
+                }
+            }
+            // Yaprak Çürümesi
+            for(let i=0; i<20; i++) {
+                let rx = Math.max(0, Math.min(DÜNYA_BOYUTU-1, px + Math.floor((Math.random()-0.5)*50)));
+                let ry = Math.floor(Math.random()*DÜNYA_YÜKSEKLİĞİ);
+                let rz = Math.max(0, Math.min(DÜNYA_BOYUTU-1, pz + Math.floor((Math.random()-0.5)*50)));
+                if(blokAl(rx, ry, rz) === 2) { if(!yaprakBaglantisiVarMi(rx, ry, rz)) { blokKoy(rx, ry, rz, 0); mUp = true; } }
+            }
+            if(mUp) meshlariGuncelle();
+        }, 250);
+
+        const oyuncu = { x: 100, y: 35, z: 100, vy: 0, yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0, hiz: 4.5, ziplamaGucu: 7, yercekimi: 18, boy: 1.95, genislik: 0.6, yerde: false };
+
+        function carpismaKontrol(px, py, pz) {
+            let offset = 0.05, pMinX = px - oyuncu.genislik/2 + offset, pMaxX = px + oyuncu.genislik/2 - offset, pMinY = py, pMaxY = py + oyuncu.boy - offset, pMinZ = pz - oyuncu.genislik/2 + offset, pMaxZ = pz + oyuncu.genislik/2 - offset;
+            let bMinX = Math.round(pMinX - 0.5), bMaxX = Math.round(pMaxX + 0.5), bMinY = Math.round(pMinY - 0.5), bMaxY = Math.round(pMaxY + 0.5), bMinZ = Math.round(pMinZ - 0.5), bMaxZ = Math.round(pMaxZ + 0.5);
+
+            for(let x = bMinX; x <= bMaxX; x++) {
+                for(let y = bMinY; y <= bMaxY; y++) {
+                    for(let z = bMinZ; z <= bMaxZ; z++) {
+                        let id = blokAl(x, y, z);
+                        if(id !== 0) {
+                            let blk = BLOKLAR_ARRAY[id];
+                            if(!blk || !blk.gecilebilir) { 
+                                let blMinX = x - 0.5, blMaxX = x + 0.5, blMinY = y - 0.5, blMaxY = y + 0.5, blMinZ = z - 0.5, blMaxZ = z + 0.5;
+                                if (pMinX < blMaxX && pMaxX > blMinX && pMinY < blMaxY && pMaxY > blMinY && pMinZ < blMaxZ && pMaxZ > blMinZ) return true;
+                            }
+                        }
+                    }
+                }
+            } return false;
+        }
+
+        // --- KONTROLLER (Yaratıcı Uçuş Entegrasyonu) ---
+        const moveData = { fwd: 0, right: 0, up: 0, down: 0 }; let joyTouchId = null, lookTouchId = null, lastLook = { x: 0, y: 0 };
+        const zJoystick = document.getElementById('joystick-zone'), kJoystick = document.getElementById('joystick-knob'), tLeft = document.getElementById('touch-left'), tRight = document.getElementById('touch-right');
+
+        function btnE(id, ev, cb) { document.getElementById(id).addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); cb(); }, {passive: false}); }
+        
+        tLeft.addEventListener('touchstart', e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { let t = e.changedTouches[i]; if(joyTouchId === null) { joyTouchId = t.identifier; joyBase = { x: t.clientX, y: t.clientY }; zJoystick.style.display = 'block'; zJoystick.style.left = (t.clientX - 60) + 'px'; zJoystick.style.top = (t.clientY - 60) + 'px'; kJoystick.style.transform = `translate(-50%, -50%)`; } } }, {passive: false});
+        tLeft.addEventListener('touchmove', e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { let t = e.changedTouches[i]; if(t.identifier === joyTouchId) { let dx = t.clientX - joyBase.x, dy = t.clientY - joyBase.y; let dist = Math.sqrt(dx*dx + dy*dy); let maxDist = 40; if(dist > maxDist) { dx = (dx/dist)*maxDist; dy = (dy/dist)*maxDist; } kJoystick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; moveData.right = dx / maxDist; moveData.fwd = -dy / maxDist; } } }, {passive: false});
+        const joyEnd = e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { if(e.changedTouches[i].identifier === joyTouchId) { joyTouchId = null; moveData.right = 0; moveData.fwd = 0; zJoystick.style.display = 'none'; } } }; tLeft.addEventListener('touchend', joyEnd); tLeft.addEventListener('touchcancel', joyEnd);
+
+        tRight.addEventListener('touchstart', e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { if(lookTouchId === null) { lookTouchId = e.changedTouches[i].identifier; lastLook = { x: e.changedTouches[i].clientX, y: e.changedTouches[i].clientY }; } } }, {passive: false});
+        tRight.addEventListener('touchmove', e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { let t = e.changedTouches[i]; if(t.identifier === lookTouchId) { oyuncu.targetYaw -= (t.clientX - lastLook.x) * 0.005; oyuncu.targetPitch -= (t.clientY - lastLook.y) * 0.005; oyuncu.targetPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, oyuncu.targetPitch)); lastLook = { x: t.clientX, y: t.clientY }; } } }, {passive: false});
+        const lookEnd = e => { if(activeMenu) return; e.preventDefault(); for(let i=0; i<e.changedTouches.length; i++) { if(e.changedTouches[i].identifier === lookTouchId) lookTouchId = null; } }; tRight.addEventListener('touchend', lookEnd); tRight.addEventListener('touchcancel', lookEnd);
+
+        // Uçuş Tuşları
+        btnE('btn-jump', 'touchstart', () => { if(isCreative) { moveData.up = 1; } else if(oyuncu.yerde) { oyuncu.vy = oyuncu.ziplamaGucu; oyuncu.yerde = false; } });
+        btnE('btn-jump', 'touchend', () => { moveData.up = 0; }); btnE('btn-jump', 'touchcancel', () => { moveData.up = 0; });
+        btnE('btn-fly-up', 'touchstart', () => { if(isCreative) moveData.up = 1; });
+        btnE('btn-fly-up', 'touchend', () => { moveData.up = 0; }); btnE('btn-fly-up', 'touchcancel', () => { moveData.up = 0; });
+        btnE('btn-fly-down', 'touchstart', () => { if(isCreative) moveData.down = 1; });
+        btnE('btn-fly-down', 'touchend', () => { moveData.down = 0; }); btnE('btn-fly-down', 'touchcancel', () => { moveData.down = 0; });
+
+        document.getElementById('mode-toggle').addEventListener('touchstart', e => { 
+            e.preventDefault(); e.stopPropagation(); isCreative = !isCreative; e.target.innerText = isCreative ? "Yaratıcı" : "Hayatta Kalma"; 
+            document.getElementById('flight-controls').style.display = isCreative ? 'flex' : 'none'; 
+            document.getElementById('btn-jump').style.display = isCreative ? 'none' : 'flex'; 
+            kirmaIptal(); 
+        });
+
+        document.getElementById('time-toggle').addEventListener('touchstart', e => {
+            e.preventDefault(); e.stopPropagation(); isDay = !isDay;
+            document.getElementById('time-toggle').innerText = isDay ? "Gündüz" : "Gece";
+            scene.background.setHex(isDay ? 0x87CEEB : 0x050515); scene.fog.color.setHex(isDay ? 0x87CEEB : 0x050515);
+            if(isDay) { sunMesh.visible = true; moonMesh.visible = false; } else { sunMesh.visible = false; moonMesh.visible = true; }
+            meshlariGuncelle();
+        });
+
+        // --- KIRMA / KOYMA ---
+        const raycaster = new THREE.Raycaster();
+        let hedefBlok = null, kirmaIslemi = null, kirmaSuresi = 0, gecenSure = 0;
+        const pbContainer = document.getElementById('progress-container'), pBar = document.getElementById('progress-bar'), btnInteract = document.getElementById('btn-interact');
+
+        function hedefiGuncelle() {
+            camera.updateMatrixWorld(); raycaster.setFromCamera(new THREE.Vector2(0, 0), camera); let intersects = [];
+            for(let key in meshes) { if(meshes[key].count > 0) { let hits = raycaster.intersectObject(meshes[key]); if(hits.length > 0) intersects.push(...hits); } }
+            intersects.sort((a,b) => a.distance - b.distance);
+            
+            if(intersects.length > 0 && intersects[0].distance < 5) {
+                let hit = intersects[0]; let pt = hit.point.clone().sub(hit.face.normal.clone().multiplyScalar(0.01));
+                let bx = Math.round(pt.x), by = Math.round(pt.y), bz = Math.round(pt.z);
+                hedefBlok = { x: bx, y: by, z: bz, normal: hit.face.normal, id: blokAl(bx,by,bz) };
+                outlineBox.position.set(bx, by, bz); outlineBox.visible = true;
+                if(hedefBlok.id === 7 || hedefBlok.id === 11) btnInteract.style.display = 'flex'; else btnInteract.style.display = 'none';
+            } else { hedefBlok = null; outlineBox.visible = false; btnInteract.style.display = 'none'; }
+        }
+
+        const outlineGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.01, 1.01, 1.01)); const outlineMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+        const outlineBox = new THREE.LineSegments(outlineGeo, outlineMat); outlineBox.visible = false; scene.add(outlineBox);
+        function kirmaIptal() { if(kirmaIslemi) clearInterval(kirmaIslemi); kirmaIslemi = null; pbContainer.style.display = 'none'; }
+
+        btnE('btn-break', 'touchstart', () => {
+            if(!hedefBlok) return;
+            let dId = hedefBlok.id; if (dId === 5) dId = 16; else if (dId === 13) dId = 14; 
+            if(isCreative) { 
+                blokKoy(hedefBlok.x, hedefBlok.y, hedefBlok.z, 0); 
+                if(dId === 18) { mesaleler = mesaleler.filter(t => t.x!==hedefBlok.x || t.y!==hedefBlok.y || t.z!==hedefBlok.z); updateTorchLightMap(); }
+                meshlariGuncelle(); envantereEkle(dId, 1); hedefBlok = null; 
+            } else {
+                let bD = BLOKLAR_ARRAY[hedefBlok.id];
+                if(bD) {
+                    kirmaSuresi = bD.sertlik * 1000; gecenSure = 0; pbContainer.style.display = 'block'; pBar.style.width = '0%';
+                    let hK = {x: hedefBlok.x, y: hedefBlok.y, z: hedefBlok.z, id: hedefBlok.id};
+                    kirmaIslemi = setInterval(() => {
+                        if(!hedefBlok || hedefBlok.x !== hK.x || hedefBlok.y !== hK.y || hedefBlok.z !== hK.z) { kirmaIptal(); return; }
+                        gecenSure += 50; pBar.style.width = (gecenSure / kirmaSuresi * 100) + '%';
+                        if(gecenSure >= kirmaSuresi) { 
+                            blokKoy(hedefBlok.x, hedefBlok.y, hedefBlok.z, 0); 
+                            if(hK.id === 18) { mesaleler = mesaleler.filter(t => t.x!==hK.x || t.y!==hK.y || t.z!==hK.z); updateTorchLightMap(); }
+                            meshlariGuncelle(); envantereEkle(dId, 1); kirmaIptal(); 
+                        }
+                    }, 50);
+                }
+            }
+        });
+        btnE('btn-break', 'touchend', kirmaIptal); btnE('btn-break', 'touchcancel', kirmaIptal);
+
+        btnE('btn-place', 'touchstart', () => {
+            if(!hedefBlok) return;
+            let nx = hedefBlok.x + Math.round(hedefBlok.normal.x), ny = hedefBlok.y + Math.round(hedefBlok.normal.y), nz = hedefBlok.z + Math.round(hedefBlok.normal.z);
+            if (blokAl(nx, ny, nz) !== 0) return;
+
+            let currentItem = envanter[seciliSlot];
+            if(currentItem && currentItem.id !== 0 && currentItem.count > 0) {
+                let bD = BLOKLAR_ARRAY[currentItem.id];
+                if(bD && bD.yerlestirilemez) return; 
+
+                // ZEMİNE KOYMA KURALI (Cam ve Yaprak kabul edilir)
+                if (currentItem.id === 18) {
+                    if (hedefBlok.normal.y !== 1) return; // Sadece üst yüze
+                    let alt = blokAl(nx, ny-1, nz);
+                    if (alt === 0 || alt === 18) return; // Altında boşluk veya meşale OLMAMALI
+                }
+
+                if(!bD || !bD.gecilebilir) {
+                    let bMx=nx-0.5, bMX=nx+0.5, bMy=ny-0.5, bMY=ny+0.5, bMz=nz-0.5, bMZ=nz+0.5;
+                    let pMx=oyuncu.x-oyuncu.genislik/2, pMX=oyuncu.x+oyuncu.genislik/2, pMy=oyuncu.y, pMY=oyuncu.y+oyuncu.boy, pMz=oyuncu.z-oyuncu.genislik/2, pMZ=oyuncu.z+oyuncu.genislik/2;
+                    if (pMx < bMX && pMX > bMx && pMy < bMY && pMY > bMy && pMz < bMZ && pMZ > bMz) return; 
+                }
+
+                blokKoy(nx, ny, nz, currentItem.id);
+                if (currentItem.id === 18) {
+                    mesaleler.push({x: nx, y: ny, z: nz});
+                    updateTorchLightMap();
+                }
+                if(!isCreative) envanterdenCikar(seciliSlot, 1);
+                meshlariGuncelle();
+            }
+        });
+
+        // --- ORTAK UI SİSTEMİ ---
+        function createSlotContent(id, count) {
+            if(id === 0 || count <= 0) return '';
+            return `<img src="${getTextureUrl(id)}" class="slot-img">${count > 1 ? `<div class="slot-count">${count}</div>` : ''}`;
+        }
+
+        let selection = null; let invCraftGrid = [0,0, 0,0], invCraftCounts = [0,0, 0,0]; let tableCraftGrid = [0,0,0, 0,0,0, 0,0,0], tableCraftCounts = [0,0,0, 0,0,0, 0,0,0];
+
+        const RECIPES = [
+            { idPattern: [[10]], result: { id: 1, count: 4 } }, { idPattern: [[1,1],[1,1]], result: { id: 7, count: 1 } },
+            { idPattern: [[1],[1]], result: { id: 15, count: 4 } }, { idPattern: [[16,16,16],[16,0,16],[16,16,16]], result: { id: 11, count: 1 } },
+            { idPattern: [[14],[15]], result: { id: 18, count: 4 } }, { idPattern: [[12],[15]], result: { id: 18, count: 4 } } 
+        ];
+
+        function findRecipeMatch(gridArr, cols, rows) {
+            let minX=cols, maxX=-1, minY=rows, maxY=-1;
+            for(let i=0; i<gridArr.length; i++) { if(gridArr[i] !== 0) { let x=i%cols, y=Math.floor(i/cols); if(x<minX) minX=x; if(x>maxX) maxX=x; if(y<minY) minY=y; if(y>maxY) maxY=y; } }
+            if(maxX === -1) return null; let pattern = []; for(let y=minY; y<=maxY; y++) { let row = []; for(let x=minX; x<=maxX; x++) row.push(gridArr[y*cols + x]); pattern.push(row); }
+            for(let r of RECIPES) {
+                if(r.idPattern.length === pattern.length && r.idPattern[0].length === pattern[0].length) {
+                    let m = true; for(let y=0; y<pattern.length; y++) { for(let x=0; x<pattern[0].length; x++) { if(r.idPattern[y][x] !== pattern[y][x]) m = false; } }
+                    if(m) return r.result;
+                }
+            } return null;
+        }
+
+        function getSlotData(src, idx) {
+            if(src === 'INV') return envanter[idx]; if(src === 'CRAFT_2x2') return {id: invCraftGrid[idx], count: invCraftCounts[idx]};
+            if(src === 'CRAFT_3x3') return {id: tableCraftGrid[idx], count: tableCraftCounts[idx]}; if(src === 'FURNACE_IN') return furnaces[currentFurnaceKey].input || {id:0,count:0};
+            if(src === 'FURNACE_FUEL') return furnaces[currentFurnaceKey].fuel || {id:0,count:0}; return {id:0, count:0};
+        }
+        function setSlotData(src, idx, data) {
+            if(src === 'INV') envanter[idx] = {id: data.id, count: data.count}; else if(src === 'CRAFT_2x2') { invCraftGrid[idx] = data.id; invCraftCounts[idx] = data.count; }
+            else if(src === 'CRAFT_3x3') { tableCraftGrid[idx] = data.id; tableCraftCounts[idx] = data.count; } else if(src === 'FURNACE_IN') furnaces[currentFurnaceKey].input = data.count>0 ? {id:data.id,count:data.count} : null;
+            else if(src === 'FURNACE_FUEL') furnaces[currentFurnaceKey].fuel = data.count>0 ? {id:data.id,count:data.count} : null;
+        }
+
+        function handleSlotClick(src, idx) {
+            if(selection && selection.creativeId) { setSlotData(src, idx, { id: selection.creativeId, count: 64 }); selection = null; } 
+            else if (!selection) { let s = getSlotData(src, idx); if (s.id !== 0 && s.count > 0) selection = { src, index: idx }; } 
+            else {
+                if (selection.src === src && selection.index === idx) selection = null;
+                else {
+                    let dSrc = getSlotData(selection.src, selection.index), dDst = getSlotData(src, idx);
+                    if (dDst.id === 0) { dDst.id = dSrc.id; dDst.count = dSrc.count; dSrc.id = 0; dSrc.count = 0; } 
+                    else if (dDst.id === dSrc.id) { let spc = 64 - dDst.count, mov = Math.min(spc, dSrc.count); dDst.count += mov; dSrc.count -= mov; if(dSrc.count === 0) dSrc.id = 0; } 
+                    else { let ti = dDst.id, tc = dDst.count; dDst.id = dSrc.id; dDst.count = dSrc.count; dSrc.id = ti; dSrc.count = tc; }
+                    setSlotData(selection.src, selection.index, dSrc); setSlotData(src, idx, dDst); selection = null;
+                }
+            } gorselleriGuncelle();
+        }
+
+        function handleOutputClick(type, resObj, gridArr, countArr) {
+            if(!resObj) return; envantereEkle(resObj.id, resObj.count);
+            for(let i=0; i<gridArr.length; i++) { if(gridArr[i] !== 0) { countArr[i]--; if(countArr[i] === 0) gridArr[i] = 0; } }
+            selection = null; gorselleriGuncelle();
+        }
+
+        function handleFurnaceOutputClick() {
+            let f = furnaces[currentFurnaceKey]; if(f && f.output && f.output.count > 0) { envantereEkle(f.output.id, f.output.count); f.output = null; }
+            selection = null; gorselleriGuncelle();
+        }
+
+        function gorselleriGuncelle() {
+            document.getElementById('hotbar').innerHTML = '';
+            for(let i=0; i<9; i++) { let div = document.createElement('div'); div.className = 'slot' + (i === seciliSlot ? ' active' : ''); div.innerHTML = createSlotContent(envanter[i].id, envanter[i].count); div.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); seciliSlot = i; gorselleriGuncelle(); }; document.getElementById('hotbar').appendChild(div); }
+
+            if(activeMenu) {
+                document.getElementById('inv-main-grid').innerHTML = ''; document.getElementById('inv-hotbar-grid').innerHTML = '';
+                for(let i=9; i<36; i++) { let d = document.createElement('div'); d.className = 'inv-slot' + (selection && selection.src==='INV' && selection.index===i ? ' selected' : ''); d.innerHTML = createSlotContent(envanter[i].id, envanter[i].count); d.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('INV', i); }; document.getElementById('inv-main-grid').appendChild(d); }
+                for(let i=0; i<9; i++) { let d = document.createElement('div'); d.className = 'inv-slot' + (selection && selection.src==='INV' && selection.index===i ? ' selected' : ''); d.innerHTML = createSlotContent(envanter[i].id, envanter[i].count); d.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('INV', i); }; document.getElementById('inv-hotbar-grid').appendChild(d); }
+
+                if(activeMenu === 'inventory') {
+                    document.getElementById('inv-all-items').innerHTML = '';
+                    for(let i=1; i<=18; i++) { let d = document.createElement('div'); d.className = 'inv-slot' + (selection && selection.creativeId===i ? ' selected' : ''); d.innerHTML = createSlotContent(i, 1); d.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); selection = { creativeId: i }; gorselleriGuncelle(); }; document.getElementById('inv-all-items').appendChild(d); }
+                    document.getElementById('inv-crafting-grid').innerHTML = '';
+                    for(let i=0; i<4; i++) { let d = document.createElement('div'); d.className = 'c-slot' + (selection && selection.src==='CRAFT_2x2' && selection.index===i ? ' selected' : ''); d.innerHTML = createSlotContent(invCraftGrid[i], invCraftCounts[i]); d.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('CRAFT_2x2', i); }; document.getElementById('inv-crafting-grid').appendChild(d); }
+                    let rObj = findRecipeMatch(invCraftGrid, 2, 2); let resD = document.getElementById('inv-crafting-result'); resD.innerHTML = createSlotContent(rObj ? rObj.id : 0, rObj ? rObj.count : 0); resD.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleOutputClick('CRAFT_2x2', rObj, invCraftGrid, invCraftCounts); };
+                } 
+                else if (activeMenu === 'crafting') {
+                    document.getElementById('table-crafting-grid').innerHTML = '';
+                    for(let i=0; i<9; i++) { let d = document.createElement('div'); d.className = 'c-slot' + (selection && selection.src==='CRAFT_3x3' && selection.index===i ? ' selected' : ''); d.innerHTML = createSlotContent(tableCraftGrid[i], tableCraftCounts[i]); d.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('CRAFT_3x3', i); }; document.getElementById('table-crafting-grid').appendChild(d); }
+                    let rObj = findRecipeMatch(tableCraftGrid, 3, 3); let resD = document.getElementById('table-crafting-result'); resD.innerHTML = createSlotContent(rObj ? rObj.id : 0, rObj ? rObj.count : 0); resD.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleOutputClick('CRAFT_3x3', rObj, tableCraftGrid, tableCraftCounts); };
+                }
+                else if (activeMenu === 'furnace' && furnaces[currentFurnaceKey]) {
+                    let f = furnaces[currentFurnaceKey];
+                    let uiIn = document.getElementById('f-input'); uiIn.className = 'c-slot' + (selection && selection.src==='FURNACE_IN' ? ' selected' : ''); uiIn.innerHTML = createSlotContent(f.input?f.input.id:0, f.input?f.input.count:0); uiIn.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('FURNACE_IN', 0); };
+                    let uiFu = document.getElementById('f-fuel'); uiFu.className = 'c-slot' + (selection && selection.src==='FURNACE_FUEL' ? ' selected' : ''); uiFu.innerHTML = createSlotContent(f.fuel?f.fuel.id:0, f.fuel?f.fuel.count:0); uiFu.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleSlotClick('FURNACE_FUEL', 0); };
+                    let uiOu = document.getElementById('f-output'); uiOu.innerHTML = createSlotContent(f.output?f.output.id:0, f.output?f.output.count:0); uiOu.ontouchstart = (e) => { e.preventDefault(); e.stopPropagation(); handleFurnaceOutputClick(); };
+                    document.getElementById('f-flame').style.height = ((f.burnTime / f.maxBurnTime) * 100) + '%'; document.getElementById('f-arrow').style.width = ((f.cookTime / 5.0) * 100) + '%';
+                }
+            }
+        }
+
+        function openUI(menuName) {
+            activeMenu = menuName; selection = null; kontrolleriSifirla();
+            document.getElementById('unified-ui-bg').style.display = 'flex';
+            document.getElementById('ui-top-inventory').style.display = (menuName === 'inventory') ? 'flex' : 'none';
+            document.getElementById('ui-top-crafting').style.display = (menuName === 'crafting') ? 'flex' : 'none';
+            document.getElementById('ui-top-furnace').style.display = (menuName === 'furnace') ? 'flex' : 'none';
+            gorselleriGuncelle();
+        }
+
+        function closeUI() {
+            document.getElementById('unified-ui-bg').style.display = 'none'; activeMenu = null; selection = null; kontrolleriSifirla();
+            for(let i=0; i<4; i++) { if(invCraftGrid[i] !== 0) { envantereEkle(invCraftGrid[i], invCraftCounts[i]); invCraftGrid[i]=0; invCraftCounts[i]=0; } }
+            for(let i=0; i<9; i++) { if(tableCraftGrid[i] !== 0) { envantereEkle(tableCraftGrid[i], tableCraftCounts[i]); tableCraftGrid[i]=0; tableCraftCounts[i]=0; } }
+            gorselleriGuncelle();
+        }
+
+        btnE('btn-inventory-open', 'touchstart', () => openUI('inventory'));
+        btnE('btn-interact', 'touchstart', () => {
+            if(hedefBlok.id === 7) openUI('crafting');
+            else if(hedefBlok.id === 11) { currentFurnaceKey = `${hedefBlok.x}_${hedefBlok.y}_${hedefBlok.z}`; if(!furnaces[currentFurnaceKey]) furnaces[currentFurnaceKey] = { input: null, fuel: null, output: null, burnTime: 0, maxBurnTime: 1, cookTime: 0 }; openUI('furnace'); }
+        });
+
+        const furnaces = {};
+        const SMELTING_RECIPES = { 10: { result: 12, count: 1 }, 16: { result: 5, count: 1 }, 9: { result: 17, count: 1 }, 4: { result: 3, count: 1 } };
+        const FUELS = { 14: 80, 12: 80, 10: 15, 1: 15, 15: 5 };
+        setInterval(() => {
+            let uiUpd = false;
+            for(let key in furnaces) {
+                let f = furnaces[key], rec = f.input ? SMELTING_RECIPES[f.input.id] : null; let cS = rec && (!f.output || (f.output.id === rec.result && f.output.count < 64));
+                if (f.burnTime > 0) f.burnTime -= 0.1; if (f.burnTime < 0) f.burnTime = 0;
+                if (cS && f.burnTime === 0 && f.fuel && f.fuel.count > 0 && FUELS[f.fuel.id]) { f.maxBurnTime = FUELS[f.fuel.id]; f.burnTime = f.maxBurnTime; f.fuel.count--; if(f.fuel.count === 0) f.fuel = null; }
+                if (f.burnTime > 0 && cS) { f.cookTime += 0.1; if (f.cookTime >= 5) { f.cookTime = 0; f.input.count--; if (f.input.count === 0) f.input = null; if (!f.output) f.output = {id: rec.result, count: rec.count}; else f.output.count += rec.count; } } else { f.cookTime = 0; }
+                if(currentFurnaceKey === key) uiUpd = true;
+            }
+            if(uiUpd && activeMenu === 'furnace') gorselleriGuncelle();
+        }, 100);
+
+        // --- ANA OYUN DÖNGÜSÜ & FPS ---
+        let lastTime = performance.now();
+        let frameCount = 0; let lastFpsTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate); 
+            let time = performance.now(); let dt = (time - lastTime) / 1000; lastTime = time; if(dt > 0.1) dt = 0.1;
+            
+            frameCount++;
+            if (time - lastFpsTime >= 1000) { document.getElementById('fps-counter').innerText = `FPS: ${frameCount}`; frameCount = 0; lastFpsTime = time; }
+
+            // GÜNEŞ VE AY YERLEŞİMİ
+            if(isDay) {
+                sunMesh.position.set(oyuncu.x + 40, oyuncu.y + 60, oyuncu.z + 40); sunMesh.lookAt(camera.position); 
+            } else {
+                moonMesh.position.set(oyuncu.x - 40, oyuncu.y + 60, oyuncu.z - 40); moonMesh.lookAt(camera.position); 
+            }
+
+            if (Math.abs(oyuncu.x - lastRenderX) > 8 || Math.abs(oyuncu.z - lastRenderZ) > 8) {
+                meshlariGuncelle(); lastRenderX = oyuncu.x; lastRenderZ = oyuncu.z;
+            }
+
+            if(isCreative) { oyuncu.vy = (moveData.up - moveData.down) * oyuncu.hiz; } else { oyuncu.vy -= oyuncu.yercekimi * dt; }
+
+            oyuncu.yaw += (oyuncu.targetYaw - oyuncu.yaw) * 0.3; oyuncu.pitch += (oyuncu.targetPitch - oyuncu.pitch) * 0.3;
+
+            let forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0,1,0), oyuncu.yaw);
+            let right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0,1,0), oyuncu.yaw);
+            let moveX = moveData.fwd * oyuncu.hiz * forward.x + moveData.right * oyuncu.hiz * right.x;
+            let moveZ = moveData.fwd * oyuncu.hiz * forward.z + moveData.right * oyuncu.hiz * right.z;
+            
+            if(!carpismaKontrol(oyuncu.x + moveX * dt, oyuncu.y, oyuncu.z)) oyuncu.x += moveX * dt;
+            if(!carpismaKontrol(oyuncu.x, oyuncu.y, oyuncu.z + moveZ * dt)) oyuncu.z += moveZ * dt;
+            if(!carpismaKontrol(oyuncu.x, oyuncu.y + oyuncu.vy * dt, oyuncu.z)) { oyuncu.y += oyuncu.vy * dt; oyuncu.yerde = false; } 
+            else { if(oyuncu.vy > 0) { oyuncu.vy = 0; } else if(oyuncu.vy < 0) { oyuncu.yerde = true; oyuncu.vy = 0; } }
+            if(oyuncu.y < 0) { oyuncu.y = DÜNYA_YÜKSEKLİĞİ + 5; oyuncu.vy = 0; }
+
+            camera.position.set(oyuncu.x, oyuncu.y + 1.8, oyuncu.z);
+            camera.rotation.order = "YXZ"; camera.rotation.y = oyuncu.yaw; camera.rotation.x = oyuncu.pitch;
+            document.getElementById('coords').innerText = `X: ${Math.floor(oyuncu.x)}, Y: ${Math.floor(oyuncu.y)}, Z: ${Math.floor(oyuncu.z)}`;
+
+            hedefiGuncelle(); renderer.render(scene, camera);
+        }
+
+        window.onload = () => { meshSisteminiKur(); dunyaUret(); meshlariGuncelle(); oyuncu.y = DÜNYA_YÜKSEKLİĞİ; gorselleriGuncelle(); animate(); };
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+    </script>
+</body>
+</html>
